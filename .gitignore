@@ -1,0 +1,6 @@
+*.o
+program
+output.ll
+tests/*.ll
+__pycache__/
+*.pyc

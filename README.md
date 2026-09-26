@@ -1,28 +1,25 @@
-# Languages and Compilers Design — Practice 2
+## Practice 4
 
-This project implements a small compiler front end with a hand-written lexer
-implemented as a byte-by-byte state machine.
+Practice 4 extends the compiler with:
 
-## Requirements
+- `i32`, `i64`, and `bool` types
+- boolean literals `true` and `false`
+- comparison operators `==` and `!=`
+- a separate semantic checking pass
+- type checking and `i32 -> i64` widening
+- LLVM code generation for integers and booleans
+- `sext` for widening and `icmp` for comparisons
 
-- Python 3
-- llvmlite
-- LLVM tools: lli, llc, clang
-
-## Run the compiler
+### Run
 
 ```bash
 python3 compiler.py input.txt output.ll
+lli output.ll
 ```
-## Run generated LLVM IR
-```lli output.ll```
-## Build executable
-```bash llc -filetype=obj -relocation-model=pic output.ll -o output.o
-clang -fPIE output.o -o program
-./program ```
-## Run tests
-```python3 run_tests.py ```
 
-The test suite contains valid and invalid programs for declarations,
-mutable variables, arithmetic expressions, assignments, exit statements,
-lexer errors, and semantic errors.
+### Print AST:
+```  python3 compiler.py --ast input.txt
+```
+### Run Practice 4 tests:
+```python3 run_tests_practice4.py
+```

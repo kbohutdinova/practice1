@@ -1,0 +1,4 @@
+bool b{true}
+i32 x{10}
+i32 y{x + b}
+exit y

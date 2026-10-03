@@ -1,17 +1,45 @@
 program ::= { statement } exit_stmt
 
-statement ::= decl | assign
+statement ::= decl
+            | assign
+            | if_stmt
+            | while_stmt
 
-decl ::= "i32" [ "mut" ] ident "{" expr "}"
+decl ::= type [ "mut" ] ident "{" expr "}"
+
+type ::= "i32" | "i64" | "bool"
 
 assign ::= ident ":=" expr
 
-exit_stmt ::= "exit" operand
+if_stmt ::= "if" expr newline block
+            [ "else" newline block ]
 
-expr ::= term { ("+" | "-") term }
+while_stmt ::= "while" expr newline block
+
+block ::= "{" newline
+          statement_list
+          [ exit_stmt newline ]
+          "}" newline
+
+statement_list ::= statement { newline statement }
+
+exit_stmt ::= "exit" factor
+
+expr ::= arithmetic_expr
+         [ ("==" | "!=") arithmetic_expr ]
+
+arithmetic_expr ::= term { ("+" | "-") term }
 
 term ::= factor { "*" factor }
 
-factor ::= number | ident
+factor ::= number
+         | "true"
+         | "false"
+         | ident
+         | "!" factor
 
-operand ::= number | ident
+number ::= digit { digit }
+
+ident ::= letter { letter | digit | "_" }
+
+newline ::= NEWLINE

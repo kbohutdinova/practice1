@@ -2,7 +2,7 @@ import os
 import subprocess
 
 
-TEST_DIR = "tests"
+TEST_DIR = "tests_pr4"
 
 
 def run_valid_test(path, expected_path):

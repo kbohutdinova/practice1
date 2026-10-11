@@ -8,3 +8,6 @@ compiler_practice1_backup.py
 compiler_practice2_backup.py
 tests_practice1_old/
 tests_practice2_old/
+
+.venv/
+tests_pr4/*.ll

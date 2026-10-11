@@ -7,8 +7,8 @@ import tempfile
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COMPILER = os.path.join(BASE_DIR, "compiler.py")
 
-OK_DIR = os.path.join(BASE_DIR, "tests", "ok")
-ERR_DIR = os.path.join(BASE_DIR, "tests", "err")
+OK_DIR = os.path.join(BASE_DIR, "tests_pr4", "ok")
+ERR_DIR = os.path.join(BASE_DIR, "tests_pr4", "err")
 
 
 def read_text(path):

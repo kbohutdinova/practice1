@@ -1,0 +1,6 @@
+bool a{false}
+if !a
+{
+exit true
+}
+exit false

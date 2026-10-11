@@ -3,9 +3,9 @@ import os
 
 
 def run_valid_test(name):
-    input_file = f"tests/{name}.txt"
-    expected_file = f"tests/{name}.expected"
-    output_file = f"tests/{name}.ll"
+    input_file = f"tests_pr4/{name}.txt"
+    expected_file = f"tests_pr4/{name}.expected"
+    output_file = f"tests_pr4/{name}.ll"
 
     result = subprocess.run(
         [
@@ -45,9 +45,9 @@ def run_valid_test(name):
 
 
 def run_invalid_test(name):
-    input_file = f"tests/{name}.txt"
-    expected_file = f"tests/{name}.expected"
-    output_file = f"tests/{name}.ll"
+    input_file = f"tests_pr4/{name}.txt"
+    expected_file = f"tests_pr4/{name}.expected"
+    output_file = f"tests_pr4/{name}.ll"
 
     result = subprocess.run(
         [

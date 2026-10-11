@@ -1,0 +1,10 @@
+bool cond{true}
+if cond
+{
+exit 42
+}
+else
+{
+exit 10
+}
+exit 0

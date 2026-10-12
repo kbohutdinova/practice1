@@ -1,1 +1,12 @@
-https://chatgpt.com/share/6ac0f98c-b518-83ed-a098-2bfe5b722085
+AI usage for Practice 6
+
+Tool used:
+ChatGPT 
+
+What I used AI for:
+- understanding the Practice 6 requirements;
+- extending the existing compiler with struct declarations and struct initialisation;
+- adding function declarations, parameters, return types, function calls and recursion;
+- adding field access and field assignment;
+
+Сhat link: https://chatgpt.com/share/6acc05a6-b93c-83ed-a212-5c33ac632f09

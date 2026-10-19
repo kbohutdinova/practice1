@@ -1,0 +1,19 @@
+struct Point
+{
+    i32 mut x
+    i32 mut y
+    fn shift := (i32 amount) -> i32
+    {
+        x := x + amount
+        exit x
+    }
+}
+struct Holder
+{
+    Point mut point
+    i32 id
+}
+Point p{3, 4}
+Holder mut h{p, 1}
+i32 result{h.point.shift(5)}
+exit h.point.x

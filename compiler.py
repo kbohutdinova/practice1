@@ -74,6 +74,17 @@ def lex(data: bytes):
                 col = 1
                 i += 1
                 continue
+            if b == ord('"'):
+                start_col = col
+                j = data.find(b'"', i + 1)
+                endline = data.find(b'\n', i + 1)
+                if j < 0 or (endline >= 0 and endline < j):
+                    raise CompileError(f"line {line}:{col}: unclosed string literal")
+                raw = data[i + 1:j]
+                tokens.append(Token("string", raw.decode("latin-1"), line, start_col))
+                col += j - i + 1
+                i = j + 1
+                continue
             if is_alpha(b):
                 state = "IDENT"
                 start = i
@@ -1688,7 +1699,6 @@ class SemanticChecker:
     def visit_assign(self, node):
         decl = self.lookup(node, node.name)
         node.decl = decl
-        
         if not decl.mutable:
             if node.fields:
                 message = (
@@ -1700,12 +1710,10 @@ class SemanticChecker:
                     f"cannot assign to "
                     f"'{node.name}': it is not mut"
                 )
-
             raise CompileError(
                 f"line {node.line}:{node.col}: "
                 f"{message}"
             )
-        
         node.value.accept(self)
         if not node.fields:
             node.target_type = decl.type_name
@@ -2913,5 +2921,549 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+# ============================================================
+# PRACTICE 7: MEMBER FUNCTIONS, I/O, AND RESULT CHAINS
+# Extensions to the existing Practice 6 visitor architecture.
+# ============================================================
+_RESERVED_P7 = {"read", "print"}
+def _p7_identifier(token):
+    if token.text in _RESERVED_P7:
+        token_error(token, f"'{token.text}' is reserved")
+    return token
+class MemberFnNode(FunctionDeclNode):
+    def dump(self, indent=0):
+        lines = [" " * indent + f"MemberFn {self.name} -> {self.result_type}"]
+        for param in self.params:
+            lines.extend(param.dump(indent + 2))
+        lines.extend(self.body.dump(indent + 2))
+        return lines
+class MemberCallNode(ExprNode):
+    def __init__(self, token, receiver, name, args):
+        super().__init__(token.line, token.column)
+        self.receiver = receiver
+        self.name = name
+        self.args = args
+        self.function = None
+        self.receiver_is_temporary = False
+    def dump(self, indent=0):
+        lines = [" " * indent + f"MemberCall {self.name}"]
+        lines.extend(self.receiver.dump(indent + 2))
+        for arg in self.args:
+            lines.extend(arg.dump(indent + 2))
+        return lines
+class ResultFieldNode(ExprNode):
+    def __init__(self, token, receiver, name):
+        super().__init__(token.line, token.column)
+        self.receiver = receiver
+        self.name = name
+        self.field = None
+    def dump(self, indent=0):
+        lines = [" " * indent + f"ResultField {self.name}"]
+        lines.extend(self.receiver.dump(indent + 2))
+        return lines
+class StringNode(ExprNode):
+    def __init__(self, token):
+        super().__init__(token.line, token.column)
+        self.value = token.text
+    def dump(self, indent=0):
+        return [" " * indent + f"String {self.value!r}"]
+class PrintNode(StmtNode):
+    def __init__(self, token, value):
+        super().__init__(token.line, token.column)
+        self.value = value
+    def dump(self, indent=0):
+        return [" " * indent + "Print"] + self.value.dump(indent + 2)
+# Preserve the existing AST shape and every existing visitor. Only add
+# methods to StructDeclNode so the old field-only structs work unchanged.
+_old_struct_init = StructDeclNode.__init__
+_old_struct_dump = StructDeclNode.dump
+def _p7_struct_init(self, line, col, name, fields, member_functions=None):
+    _old_struct_init(self, line, col, name, fields)
+    self.member_functions = member_functions or []
+    self.method_map = {}
+def _p7_struct_dump(self, indent=0):
+    lines = _old_struct_dump(self, indent)
+    for method in self.member_functions:
+        lines.extend(method.dump(indent + 2))
+    return lines
+StructDeclNode.__init__ = _p7_struct_init
+StructDeclNode.dump = _p7_struct_dump
+# The original lexer handles line/column locations; extend only the string
+# branch in START (see the source edit just above this extension).
+_old_parse_function = Parser.parse_function
+_old_parse_decl = Parser.parse_decl
+_old_parse_assign = Parser.parse_assign
+def _p7_function(self, member=False):
+    result = _old_parse_function(self)
+    _p7_identifier(Token("identifier", result.name, result.line, result.col + 3))
+    for p in result.params:
+        _p7_identifier(Token("identifier", p.name, p.line, p.col))
+    if member:
+        result.__class__ = MemberFnNode
+    return result
+def _p7_struct(self):
+    struct_tok = self.expect_text("struct")
+    name_tok = _p7_identifier(self.expect_kind("identifier", "a struct name"))
+    self.line_finished()
+    self.next_line()
+    opening = self.expect_text("{", "expected '{' after struct declaration")
+    self.line_finished()
+    fields, methods = [], []
+    seen_method = False
+    while True:
+        if self.next_line() is None:
+            token_error(opening, "'{' is never closed")
+        t = self.peek()
+        if t.text == "}":
+            self.eat()
+            self.line_finished()
+            if not fields:
+                token_error(t, "struct must have at least one field")
+            return StructDeclNode(struct_tok.line, struct_tok.column, name_tok.text, fields, methods)
+        if t.text == "fn":
+            if not fields:
+                token_error(t, "member function before first field")
+            seen_method = True
+            methods.append(self.parse_function(member=True))
+            continue
+        if seen_method:
+            token_error(t, "field after member function")
+        typ = self.eat()
+        if typ.text not in ("i32", "i64", "bool") and typ.kind != "identifier":
+            token_error(typ, "expected a field type")
+        mutable = bool(self.peek() and self.peek().text == "mut" and self.eat())
+        name = _p7_identifier(self.expect_kind("identifier", "a field name"))
+        self.line_finished()
+        fields.append(FieldDeclNode(name.line, name.column, name.text, typ.text, mutable))
+def _p7_decl(self):
+    node = _old_parse_decl(self)
+    _p7_identifier(Token("identifier", node.name, node.line, node.col))
+    return node
+def _p7_statement(self):
+    t = self.peek()
+    if t.text == "print":
+        tok = self.eat()
+        self.expect_text("(")
+        if self.peek() and self.peek().text == ")":
+            token_error(self.peek(), "print needs one argument")
+        expr = self.parse_expr()
+        self.expect_text(")")
+        return PrintNode(tok, expr)
+    return _p7_original_parse_statement(self)
+def _p7_arguments(self):
+    self.expect_text("(")
+    args = []
+    if self.peek() and self.peek().text != ")":
+        args.append(self.parse_expr())
+        while self.peek() and self.peek().text == ",":
+            self.eat()
+            args.append(self.parse_expr())
+    self.expect_text(")")
+    return args
+def _p7_factor(self):
+    tok = self.peek()
+    if tok is None:
+        self.error_at_end("expected expression")
+    if tok.text == "!":
+        self.eat()
+        return NotNode(tok.line, tok.column, self.parse_factor())
+    if tok.kind == "string":
+        self.eat()
+        return StringNode(tok)
+    if tok.kind == "number":
+        self.eat()
+        node = ConstNode(tok.line, tok.column, int(tok.text))
+    elif tok.text in ("true", "false"):
+        self.eat()
+        node = BoolNode(tok.line, tok.column, tok.text == "true")
+    elif tok.text == "(":
+        self.eat()
+        node = self.parse_expr()
+        self.expect_text(")")
+    elif tok.text in ("read", "print") or tok.kind == "identifier":
+        self.eat()
+        if self.peek() and self.peek().text == "(":
+            args = _p7_arguments(self)
+            node = CallNode(tok.line, tok.column, tok.text, args)
+        else:
+            if tok.text in _RESERVED_P7:
+                token_error(tok, f"'{tok.text}' is reserved")
+            node = VarNode(tok.line, tok.column, tok.text)
+    else:
+        token_error(tok, f"expected expression, got '{tok.text}'")
+    while self.peek() and self.peek().text == ".":
+        dot = self.eat()
+        name = self.expect_kind("identifier", "a field or member function name")
+        _p7_identifier(name)
+        if self.peek() and self.peek().text == "(":
+            node = MemberCallNode(name, node, name.text, _p7_arguments(self))
+        elif isinstance(node, (VarNode, FieldAccessNode)):
+            if isinstance(node, VarNode):
+                node = FieldAccessNode(node.line, node.col, node.name, [name.text])
+            else:
+                node.fields.append(name.text)
+        else:
+            node = ResultFieldNode(name, node, name.text)
+    return node
+_p7_original_parse_statement = Parser.parse_statement
+Parser.parse_function = _p7_function
+Parser.parse_struct = _p7_struct
+Parser.parse_decl = _p7_decl
+Parser.parse_statement = _p7_statement
+Parser.parse_factor = _p7_factor
+# Semantic checker: names in member bodies prefer locals/parameters over
+# fields, and calls are analysed for mutation after all functions are seen.
+_old_semantic_program = SemanticChecker.visit_program
+_old_lookup = SemanticChecker.lookup
+_old_semantic_struct = SemanticChecker.visit_structdecl
+_old_semantic_function = SemanticChecker.visit_functiondecl
+_old_semantic_var = SemanticChecker.visit_var
+_old_semantic_field = SemanticChecker.visit_fieldaccess
+_old_semantic_call = SemanticChecker.visit_call
+_old_semantic_assign = SemanticChecker.visit_assign
+def _p7_lookup(self, node, name):
+    for frame in reversed(self.scopes):
+        if name in frame:
+            return frame[name]
+    if getattr(self, "current_struct", None) and name in self.current_struct.field_map:
+        field = self.current_struct.field_map[name]
+        return field
+    return _old_lookup(self, node, name)
+def _p7_struct_sem(self, node):
+    _old_semantic_struct(self, node)
+    node.method_map = {}
+    for method in node.member_functions:
+        if method.name in node.field_map or method.name in node.method_map:
+            raise CompileError(f"line {method.line}:{method.col}: duplicate member '{method.name}'")
+        node.method_map[method.name] = method
+        method.owner = node
+        method.direct_mutating = False
+        method.mutating = False
+        method.dependencies = set()
+def _p7_program_sem(self, node):
+    self.current_struct = None
+    self.pending_member_calls = []
+    for struct in node.structs:
+        struct.accept(self)
+    for fn in node.functions:
+        if fn.name in self.functions:
+            raise CompileError(f"line {fn.line}:{fn.col}: duplicate function '{fn.name}'")
+        self.functions[fn.name] = fn
+    for fn in node.functions + [m for s in node.structs for m in s.member_functions]:
+        if not self.is_known_type(fn.result_type):
+            raise CompileError(f"line {fn.line}:{fn.col}: unknown return type '{fn.result_type}'")
+        seen = set()
+        for p in fn.params:
+            if not self.is_known_type(p.type_name):
+                raise CompileError(f"line {p.line}:{p.col}: unknown parameter type '{p.type_name}'")
+            if p.name in seen:
+                raise CompileError(f"line {p.line}:{p.col}: duplicate parameter '{p.name}'")
+            seen.add(p.name)
+    for fn in node.functions:
+        fn.accept(self)
+    for struct in node.structs:
+        for fn in struct.member_functions:
+            fn.accept(self)
+    changed = True
+    while changed:
+        changed = False
+        for struct in node.structs:
+            for fn in struct.member_functions:
+                flag = fn.direct_mutating or any(dep.mutating for dep in fn.dependencies)
+                if flag and not fn.mutating:
+                    fn.mutating = True
+                    changed = True
+    self.current_function = None
+    self.current_struct = None
+    self.scopes = [{}]
+    for stmt in node.statements:
+        stmt.accept(self)
+    node.exit_node.accept(self)
+    for call, method, links, temporary in self.pending_member_calls:
+        if method.mutating and not temporary and not all(links):
+            raise CompileError(f"line {call.line}:{call.col}: mutating call through const link")
+def _p7_function_sem(self, node):
+    previous = getattr(self, "current_struct", None)
+    self.current_struct = getattr(node, "owner", None)
+    try:
+        _old_semantic_function(self, node)
+    finally:
+        self.current_struct = previous
+def _p7_var_sem(self, node):
+    result = _old_semantic_var(self, node)
+    node.implicit_field = isinstance(node.decl, FieldDeclNode)
+    return result
+def _p7_field_sem(self, node):
+    result = _old_semantic_field(self, node)
+    node.implicit_field = isinstance(node.decl, FieldDeclNode)
+    return result
+def _p7_path(self, expr):
+    if isinstance(expr, VarNode):
+        return [True if getattr(expr, "implicit_field", False) else expr.decl.mutable], False
+    if isinstance(expr, FieldAccessNode):
+        return [True if getattr(expr, "implicit_field", False) else expr.decl.mutable] + [f.mutable for f in expr.resolved_fields], False
+    if isinstance(expr, ResultFieldNode):
+        links, temp = _p7_path(self, expr.receiver)
+        return links + [expr.field.mutable], temp
+    return [], True
+def _p7_self_root(self, expr):
+    if isinstance(expr, (VarNode, FieldAccessNode)):
+        return getattr(expr, "implicit_field", False)
+    if isinstance(expr, ResultFieldNode):
+        return _p7_self_root(self, expr.receiver)
+    return False
+def _p7_arguments_sem(self, node, fn, args):
+    if len(args) != len(fn.params):
+        raise CompileError(f"line {node.line}:{node.col}: '{fn.name}' expects {len(fn.params)} arguments, got {len(args)}")
+    for arg, param in zip(args, fn.params):
+        arg.accept(self)
+        self.check_assignable(arg, param.type_name, arg, "pass argument")
+def _p7_call_sem(self, node):
+    if node.name == "read":
+        if node.args:
+            raise CompileError(f"line {node.line}:{node.col}: read() takes no arguments")
+        node.type = "i32"
+        node.function = "read"
+        return node.type
+    if node.name == "print":
+        raise CompileError(f"line {node.line}:{node.col}: print is a statement, not a value")
+    struct = getattr(self, "current_struct", None)
+    if struct and node.name in struct.method_map:
+        fn = struct.method_map[node.name]
+        node.function = fn
+        node.member_on_this = True
+        _p7_arguments_sem(self, node, fn, node.args)
+        if self.current_function and isinstance(self.current_function, MemberFnNode):
+            self.current_function.dependencies.add(fn)
+        self.pending_member_calls.append((node, fn, [True], False))
+        node.type = fn.result_type
+        return node.type
+    return _old_semantic_call(self, node)
+def _p7_membercall_sem(self, node):
+    receiver_type = node.receiver.accept(self)
+    if receiver_type not in self.structs:
+        raise CompileError(f"line {node.line}:{node.col}: member call on non-struct '{receiver_type}'")
+    struct = self.structs[receiver_type]
+    if node.name not in struct.method_map:
+        raise CompileError(f"line {node.line}:{node.col}: unknown member function '{node.name}'")
+    fn = struct.method_map[node.name]
+    node.function = fn
+    _p7_arguments_sem(self, node, fn, node.args)
+    links, temporary = _p7_path(self, node.receiver)
+    node.receiver_is_temporary = temporary
+    self.pending_member_calls.append((node, fn, links, temporary))
+    if self.current_function and isinstance(self.current_function, MemberFnNode) and _p7_self_root(self, node.receiver):
+        self.current_function.dependencies.add(fn)
+    node.type = fn.result_type
+    return node.type
+def _p7_resultfield_sem(self, node):
+    receiver_type = node.receiver.accept(self)
+    if receiver_type not in self.structs:
+        raise CompileError(f"line {node.line}:{node.col}: '.' after non-struct result")
+    struct = self.structs[receiver_type]
+    if node.name not in struct.field_map:
+        raise CompileError(f"line {node.line}:{node.col}: unknown field '{node.name}'")
+    node.field = struct.field_map[node.name]
+    node.type = node.field.type_name
+    return node.type
+def _p7_string_sem(self, node):
+    node.type = "string"
+    return node.type
+def _p7_print_sem(self, node):
+    kind = node.value.accept(self)
+    if kind not in {"i32", "i64", "bool", "string"} and kind not in self.structs:
+        raise CompileError(f"line {node.line}:{node.col}: unsupported print type")
+def _p7_assignment_sem(self, node):
+    _old_semantic_assign(self, node)
+    if self.current_function and isinstance(self.current_function, MemberFnNode):
+        if isinstance(node.decl, FieldDeclNode):
+            self.current_function.direct_mutating = True
+        elif node.resolved_fields and isinstance(node.decl, FieldDeclNode):
+            self.current_function.direct_mutating = True
+SemanticChecker.lookup = _p7_lookup
+SemanticChecker.visit_structdecl = _p7_struct_sem
+SemanticChecker.visit_program = _p7_program_sem
+SemanticChecker.visit_functiondecl = _p7_function_sem
+SemanticChecker.visit_memberfn = _p7_function_sem
+SemanticChecker.visit_var = _p7_var_sem
+SemanticChecker.visit_fieldaccess = _p7_field_sem
+SemanticChecker.visit_call = _p7_call_sem
+SemanticChecker.visit_membercall = _p7_membercall_sem
+SemanticChecker.visit_resultfield = _p7_resultfield_sem
+SemanticChecker.visit_string = _p7_string_sem
+SemanticChecker.visit_print = _p7_print_sem
+SemanticChecker.visit_assign = _p7_assignment_sem
+# IR additions use llvmlite.ir only. In particular no LLVM IR strings
+# are assembled by hand.
+_old_codegen_program = CodeGen.visit_program
+_old_codegen_function = CodeGen.visit_functiondecl
+_old_codegen_var = CodeGen.visit_var
+_old_codegen_field = CodeGen.visit_fieldaccess
+_old_codegen_call = CodeGen.visit_call
+_old_codegen_assign = CodeGen.visit_assign
+def _p7_generate_program(self, node):
+    self.struct_decls = {s.name: s for s in node.structs}
+    for struct in node.structs:
+        t = self.module.context.get_identified_type(struct.name)
+        self.struct_types[struct.name] = t
+        struct.llvm_type = t
+    for struct in node.structs:
+        struct.llvm_type.set_body(*[llvm_type(f.type_name, self.struct_types) for f in struct.fields])
+    all_fns = node.functions + [m for s in node.structs for m in s.member_functions]
+    for fn in all_fns:
+        params = [llvm_type(p.type_name, self.struct_types) for p in fn.params]
+        if isinstance(fn, MemberFnNode):
+            params.insert(0, llvm_type(fn.owner.name, self.struct_types).as_pointer())
+            name = f"{fn.owner.name}_{fn.name}"
+        else:
+            name = f"user_fn_{fn.name}"
+        fn.llvm_function = ir.Function(self.module, ir.FunctionType(llvm_type(fn.result_type, self.struct_types), params), name=name)
+    for fn in all_fns:
+        fn.accept(self)
+    self.current_function_decl = None
+    self.current_ir_function = self.main
+    self.entry = self.main.entry_basic_block
+    self.builder = ir.IRBuilder(self.entry)
+    self.builder.position_at_end(self.entry)
+    for stmt in node.statements:
+        if not self.builder.block.is_terminated:
+            stmt.accept(self)
+    if not self.builder.block.is_terminated:
+        node.exit_node.accept(self)
+def _p7_codegen_function(self, node):
+    old_builder = self.builder
+    old_entry = self.entry
+    old_ir = self.current_ir_function
+    old_decl = self.current_function_decl
+    old_this = getattr(self, "this_ptr", None)
+    fn = node.llvm_function
+    entry = fn.append_basic_block("entry")
+    self.current_ir_function = fn
+    self.current_function_decl = node
+    self.entry = entry
+    self.builder = ir.IRBuilder(entry)
+    args = list(fn.args)
+    self.this_ptr = None
+    if isinstance(node, MemberFnNode):
+        self.this_ptr = args.pop(0)
+        self.this_ptr.name = "this"
+    for arg, param in zip(args, node.params):
+        arg.name = param.name
+        ptr = self.create_alloca(param.type_name, param.name)
+        self.builder.store(arg, ptr)
+        param.ptr = ptr
+    node.body.accept(self)
+    self.builder = old_builder
+    self.entry = old_entry
+    self.current_ir_function = old_ir
+    self.current_function_decl = old_decl
+    self.this_ptr = old_this
+def _p7_declaration_pointer(self, node):
+    if isinstance(node.decl, FieldDeclNode):
+        return self.builder.gep(self.this_ptr, [ir.Constant(I32, 0), ir.Constant(I32, node.decl.index)], inbounds=True)
+    return node.decl.ptr
+def _p7_expression_pointer(self, node):
+    if isinstance(node, VarNode):
+        return _p7_declaration_pointer(self, node)
+    if isinstance(node, FieldAccessNode):
+        ptr = _p7_declaration_pointer(self, node)
+        for field in node.resolved_fields:
+            ptr = self.builder.gep(ptr, [ir.Constant(I32, 0), ir.Constant(I32, field.index)], inbounds=True)
+        return ptr
+    if isinstance(node, ResultFieldNode):
+        ptr = _p7_expression_pointer(self, node.receiver)
+        return self.builder.gep(ptr, [ir.Constant(I32, 0), ir.Constant(I32, node.field.index)], inbounds=True)
+    if node.type in self.struct_types:
+        ptr = self.create_alloca(node.type, "temporary")
+        self.builder.store(node.accept(self), ptr)
+        return ptr
+    raise CompileError(f"line {node.line}:{node.col}: expression is not an object")
+def _p7_codegen_var(self, node):
+    return self.builder.load(_p7_declaration_pointer(self, node), name=f"load_{node.name}")
+def _p7_codegen_field(self, node):
+    return self.builder.load(_p7_expression_pointer(self, node), name=f"load_{node.name}_{'_'.join(node.fields)}")
+def _p7_codegen_resultfield(self, node):
+    return self.builder.load(_p7_expression_pointer(self, node))
+def _p7_call_values(self, args, params):
+    values = []
+    for arg, param in zip(args, params):
+        value = arg.accept(self)
+        values.append(self.coerce(value, arg.type, param.type_name))
+    return values
+def _p7_codegen_call(self, node):
+    if node.function == "read":
+        if not hasattr(self, "scanf"):
+            scanf_t = ir.FunctionType(I32, [I8.as_pointer()], var_arg=True)
+            self.scanf = ir.Function(self.module, scanf_t, name="scanf")
+        tmp = self.create_alloca("i32", "read_value")
+        self.builder.call(self.scanf, [self._p7_string("%d"), tmp])
+        return self.builder.load(tmp)
+    if isinstance(node.function, MemberFnNode):
+        vals = [self.this_ptr] + _p7_call_values(self, node.args, node.function.params)
+        return self.builder.call(node.function.llvm_function, vals)
+    return _old_codegen_call(self, node)
+def _p7_codegen_membercall(self, node):
+    ptr = _p7_expression_pointer(self, node.receiver)
+    values = [ptr] + _p7_call_values(self, node.args, node.function.params)
+    return self.builder.call(node.function.llvm_function, values)
+def _p7_codegen_assign(self, node):
+    if not isinstance(node.decl, FieldDeclNode):
+        return _old_codegen_assign(self, node)
+    val = node.value.accept(self)
+    val = self.coerce(val, node.value.type, node.target_type)
+    ptr = self.builder.gep(self.this_ptr, [ir.Constant(I32, 0), ir.Constant(I32, node.decl.index)], inbounds=True)
+    for field in node.resolved_fields:
+        ptr = self.builder.gep(ptr, [ir.Constant(I32, 0), ir.Constant(I32, field.index)], inbounds=True)
+    self.builder.store(val, ptr)
+def _p7_string(self, text):
+    if not hasattr(self, "p7_strings"):
+        self.p7_strings = {}
+    if text not in self.p7_strings:
+        raw = text.encode("utf-8") + b"\0"
+        self.p7_strings[text] = self.make_string(f"p7_string_{len(self.p7_strings)}", raw)
+    return self.string_ptr(self.p7_strings[text])
+def _p7_printf(self, fmt, *values):
+    self.builder.call(self.printf, [self._p7_string(fmt), *values])
+def _p7_print_struct(self, ptr, type_name):
+    struct = self.struct_decls[type_name]
+    _p7_printf(self, "%s", self._p7_string(type_name + "{"))
+    for index, field in enumerate(struct.fields):
+        if index:
+            _p7_printf(self, "%s", self._p7_string(", "))
+        _p7_printf(self, "%s", self._p7_string(field.name + ": "))
+        fptr = self.builder.gep(ptr, [ir.Constant(I32, 0), ir.Constant(I32, index)], inbounds=True)
+        if field.type_name in self.struct_types:
+            _p7_print_struct(self, fptr, field.type_name)
+        elif field.type_name == "bool":
+            val = self.builder.load(fptr)
+            text = self.builder.select(val, self._p7_string("true"), self._p7_string("false"))
+            _p7_printf(self, "%s", text)
+        else:
+            _p7_printf(self, "%d" if field.type_name == "i32" else "%lld", self.builder.load(fptr))
+    _p7_printf(self, "%s", self._p7_string("}"))
+def _p7_codegen_print(self, node):
+    expr = node.value
+    if expr.type == "string":
+        _p7_printf(self, "%s\n", self._p7_string(expr.value))
+    elif expr.type == "bool":
+        val = expr.accept(self)
+        _p7_printf(self, "%s\n", self.builder.select(val, self._p7_string("true"), self._p7_string("false")))
+    elif expr.type in INT_TYPES:
+        _p7_printf(self, "%d\n" if expr.type == "i32" else "%lld\n", expr.accept(self))
+    else:
+        ptr = _p7_expression_pointer(self, expr)
+        _p7_print_struct(self, ptr, expr.type)
+        _p7_printf(self, "%s", self._p7_string("\n"))
+CodeGen.visit_program = _p7_generate_program
+CodeGen.visit_functiondecl = _p7_codegen_function
+CodeGen.visit_memberfn = _p7_codegen_function
+CodeGen.visit_var = _p7_codegen_var
+CodeGen.visit_fieldaccess = _p7_codegen_field
+CodeGen.visit_resultfield = _p7_codegen_resultfield
+CodeGen.visit_call = _p7_codegen_call
+CodeGen.visit_membercall = _p7_codegen_membercall
+CodeGen.visit_assign = _p7_codegen_assign
+CodeGen.visit_print = _p7_codegen_print
+CodeGen._p7_string = _p7_string
 if __name__ == "__main__":
     main()

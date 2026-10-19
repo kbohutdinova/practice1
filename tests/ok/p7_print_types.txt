@@ -1,0 +1,20 @@
+struct Point
+{
+    i32 x
+    i32 y
+}
+struct Circle
+{
+    Point center
+    i32 radius
+}
+Point p{3, 4}
+Circle c{p, 2}
+i64 big{3000000000}
+print("Hello!")
+print(p)
+print(c)
+print(big * 2)
+print(true)
+print(false)
+exit 0

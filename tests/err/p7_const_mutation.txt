@@ -1,0 +1,12 @@
+struct Counter
+{
+    i32 mut value
+    fn increase := (i32 amount) -> i32
+    {
+        value := value + amount
+        exit value
+    }
+}
+Counter c{5}
+i32 result{c.increase(3)}
+exit result

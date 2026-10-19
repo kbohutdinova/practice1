@@ -10,3 +10,26 @@ What I used AI for:
 - adding field access and field assignment;
 
 Сhat link: https://chatgpt.com/share/6acc05a6-b93c-83ed-a212-5c33ac632f09
+
+AI usage for Practice 7
+
+Tool used:
+ChatGPT
+
+What I used AI for:
+- understanding the Practice 7 requirements;
+- extending the existing Practice 6 compiler with member function declarations and calls;
+- adding name resolution for local variables, parameters and struct fields;
+- implementing mutation rules for member functions and const objects;
+- generating LLVM IR for member functions with the implicit this pointer;
+- implementing the read() and print() built-in operations;
+- supporting member calls and field access in chained expressions;
+- creating positive and negative tests for Practice 7;
+- debugging compilation errors and checking generated LLVM IR.
+
+What I used as-is:
+- the existing compiler architecture from Practice 6;
+- the general implementation approach for Practice 7;
+- AI-assisted code changes and test examples.
+
+Сhat link: https://chatgpt.com/share/6ad64dc3-8b84-83ed-93ce-3c2acd585bca

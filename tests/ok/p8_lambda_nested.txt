@@ -1,0 +1,11 @@
+i32 a{3}
+fn outer := [a](i32 y) -> i32
+{
+ fn inner := [a](i32 x) -> i32
+ {
+  i32 r{x + a}
+  exit r
+ }
+ exit inner(y)
+}
+exit outer(4)

@@ -1,0 +1,18 @@
+struct Scale
+{
+ i32 k
+ fn call := (i32 v) -> i32
+ {
+  i32 r{v * k}
+  exit r
+ }
+}
+struct Shape
+{
+ Scale scale
+ i32 side
+}
+Scale s{2}
+Shape shape{s, 5}
+print(shape.scale(7))
+exit 0

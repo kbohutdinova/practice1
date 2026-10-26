@@ -1,0 +1,12 @@
+struct Calculator
+{
+    i32 base
+    fn add := (i32 x, i32 y) -> i32
+    {
+        i32 result{base + x + y}
+        exit result
+    }
+}
+Calculator c{10}
+i32 result{c.add(3, 7)}
+exit result

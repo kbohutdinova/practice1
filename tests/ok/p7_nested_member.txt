@@ -1,0 +1,18 @@
+struct Point
+{
+    i32 x
+    i32 y
+    fn d2 := () -> i32
+    {
+        i32 result{x * x + y * y}
+        exit result
+    }
+}
+struct Circle
+{
+    Point center
+    i32 radius
+}
+Point p{3, 4}
+Circle c{p, 2}
+exit c.center.d2()

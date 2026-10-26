@@ -1,0 +1,7 @@
+struct Point
+{
+    i32 x
+}
+Point p{3}
+i32 result{p.unknown()}
+exit result

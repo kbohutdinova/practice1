@@ -1,0 +1,6 @@
+fn widen := (i64 x) -> i64
+{
+exit x
+}
+i32 value{42}
+exit widen(value)

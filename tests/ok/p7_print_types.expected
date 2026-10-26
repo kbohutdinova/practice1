@@ -1,0 +1,7 @@
+Hello!
+Point{x: 3, y: 4}
+Circle{center: Point{x: 3, y: 4}, radius: 2}
+6000000000
+true
+false
+Program exit with result 0

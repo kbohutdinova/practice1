@@ -1,67 +1,40 @@
-# Practice 5
+# Languages and Compilers — Practice 8
 
-Practice 5 extends the compiler with:
+This compiler is implemented in Python using llvmlite.ir to generate LLVM IR.
 
-- `i32`, `i64`, and `bool` types
-- boolean literals `true` and `false`
-- comparison operators `==` and `!=`
-- unary boolean operator `!`
-- `if` and optional `else`
-- nested blocks and block scopes
-- variable shadowing
-- LLVM basic blocks for branches
-- entry-block `alloca` instructions
-- `while` loops as an additional task
-- type checking and `i32 -> i64` widening
-- LLVM IR generation with `llvmlite`
+## Features
 
-## Run
+The compiler supports features from previous practices:
+- i32, i64, bool and struct types
+- const and mut variables
+- arithmetic and comparison expressions
+- if/else and while statements
+- global functions and recursion
+- structs, fields and member functions
+- chained member calls
+- read() and print()
+
+Practice 8 adds:
+- Callable objects using a `call` member function
+- Callable struct fields
+- Lambda declarations with capture lists
+- Captures by value
+- Nested lambdas and lambdas inside loops
+- Semantic rewriting of lambdas into structs
+- Mutable captures using `[mut name]`
+- `--ast-checked` output
+- Semantic errors with line:column positions
+
+## Requirements
+
+- Python 3
+- llvmlite
+- LLVM `lli`
+
+## Compile and run
 
 ```bash
 python3 compiler.py input.txt output.ll
 lli output.ll
 ```
 
-## Print AST
-
-```bash
-python3 compiler.py --ast input.txt
-```
-
-## Run Practice 5 tests
-
-```bash
-python3 check.py
-```
-
-## Run previous regression tests
-
-```bash
-python3 run_tests.py
-python3 run_tests_practice3.py
-python3 run_tests_practice4.py
-```
-
-Note: the old Practice 4 `single_bang` error test is expected to fail under Practice 5 because unary `!` is now valid syntax.
-
-## mem2reg check
-
-```bash
-python3 compiler.py tests/ok/assigned_both_arms.txt output.ll
-opt-18 -passes=mem2reg -S output.ll
-```
-
-The promoted IR should contain a `phi` node in the merge block.
-
-## Bonus while example
-
-```bash
-python3 compiler.py tests/ok/while_sum.txt output.ll
-lli output.ll
-```
-
-Expected output:
-
-```text
-Program exit with result 55
-```

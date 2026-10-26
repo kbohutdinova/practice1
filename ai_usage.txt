@@ -33,3 +33,31 @@ What I used as-is:
 - AI-assisted code changes and test examples.
 
 Сhat link: https://chatgpt.com/share/6ad64dc3-8b84-83ed-93ce-3c2acd585bca
+
+Practice 8 — AI Usage
+
+Tool: OpenAI ChatGPT
+
+Purpose:
+- Analysis of the Practice 8 requirements.
+- Review of the existing Practice 7 compiler architecture.
+- Assistance with implementing callable objects and callable fields.
+- Generation of lambda and capture handling code.
+- Assistance with mutable captures (additional task).
+- Generation of positive and negative tests.
+- Debugging and checking LLVM IR output.
+- Preparation of documentation.
+
+Code usage:
+AI-generated implementation code was integrated into the existing compiler.py.
+The implementation was tested in the Ubuntu VM using llvmlite and lli.
+The suggested tests were added to the project and executed.
+
+Verification:
+- Practice 7: 22/22 tests passed.
+- Practice 8: 23/23 tests passed.
+- Mutable capture reference example produced the expected output.
+- Missing-capture and lambda-as-argument errors were verified.
+- --ast-checked and generated LLVM IR were inspected.
+
+Chat link: https://chatgpt.com/share/6adfa76a-8f70-83ed-8816-cc3232312c0a

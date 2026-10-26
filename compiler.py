@@ -1,3 +1,4 @@
+ 
 import os
 import sys
 from llvmlite import ir
@@ -3465,5 +3466,486 @@ CodeGen.visit_membercall = _p7_codegen_membercall
 CodeGen.visit_assign = _p7_codegen_assign
 CodeGen.visit_print = _p7_codegen_print
 CodeGen._p7_string = _p7_string
+# ============================================================
+# PRACTICE 8: callable objects and lambdas
+# ============================================================
+
+class LambdaNode(StmtNode):
+    def __init__(self, token, name, captures, params, result_type, body):
+        super().__init__(token.line, token.column)
+        self.name = name
+        self.captures = captures  # (name_token, mutable)
+        self.params = params
+        self.result_type = result_type
+        self.body = body
+        self.hidden_struct = None
+        self.declaration = None
+
+    def dump(self, indent=0):
+        lines = [" " * indent + f"Lambda {self.name} -> {self.result_type}"]
+        if self.hidden_struct is not None:
+            lines.extend(self.hidden_struct.dump(indent + 2))
+            lines.extend(self.declaration.dump(indent + 2))
+        else:
+            for token, mutable in self.captures:
+                lines.append(" " * (indent + 2) + f"Capture {token.text}" + (" mut" if mutable else ""))
+            for param in self.params:
+                lines.extend(param.dump(indent + 2))
+            lines.extend(self.body.dump(indent + 2))
+        return lines
+
+
+def _p8_lambda_header(self):
+    token = self.expect_text("fn")
+    name = self.expect_kind("identifier", "a lambda name")
+    _p7_identifier(name)
+    self.expect_text(":=")
+    self.expect_text("[", "expected '[' after lambda name")
+    captures = []
+    if self.peek() and self.peek().text != "]":
+        while True:
+            mutable = bool(self.peek() and self.peek().text == "mut" and self.eat())
+            cap = self.expect_kind("identifier", "a captured variable")
+            captures.append((cap, mutable))
+            if not self.peek() or self.peek().text != ",":
+                break
+            self.eat()
+    self.expect_text("]")
+    self.expect_text("(")
+    params = []
+    if self.peek() and self.peek().text != ")":
+        while True:
+            typ = self.eat()
+            if typ.text not in ("i32", "i64", "bool") and typ.kind != "identifier":
+                token_error(typ, "expected a parameter type")
+            param = self.expect_kind("identifier", "a parameter name")
+            _p7_identifier(param)
+            params.append(ParamNode(param.line, param.column, param.text, typ.text))
+            if not self.peek() or self.peek().text != ",":
+                break
+            self.eat()
+    self.expect_text(")")
+    self.expect_text("->")
+    result = self.eat()
+    if result.text not in ("i32", "i64", "bool") and result.kind != "identifier":
+        token_error(result, "expected result type")
+    self.line_finished()
+    body = self.parse_block("lambda " + name.text, token)
+    if body.exit_node is None:
+        token_error(token, f"lambda '{name.text}' must end with exit")
+    return LambdaNode(token, name.text, captures, params, result.text, body)
+
+
+Parser.parse_lambda = _p8_lambda_header
+_p8_previous_statement = Parser.parse_statement
+
+
+def _p8_statement(self):
+    first = self.peek()
+    if first is not None and first.text == "fn":
+        return self.parse_lambda()
+    return _p8_previous_statement(self)
+
+
+Parser.parse_statement = _p8_statement
+
+# Top-level 'fn' can introduce either a global function or a lambda.
+def _p8_program(self):
+    structs, functions, statements = [], [], []
+    exit_node = None
+    phase = "structs"
+    last_line, last_col = 1, 1
+    while True:
+        tokens = self.next_line()
+        if tokens is None:
+            break
+        last_line, last_col = self.current_line, self.end_col
+        first = self.peek()
+        if first.text == "}":
+            token_error(first, "'}' without an open block")
+        if first.text == "else":
+            token_error(first, "'else' without an 'if'")
+        if exit_node is not None:
+            token_error(first, "code after exit")
+        if first.text == "struct":
+            if phase != "structs":
+                token_error(first, "struct declaration must appear before functions and statements")
+            structs.append(self.parse_struct())
+            continue
+        if first.text == "fn":
+            is_lambda = any(t.text == "[" for t in self.toks)
+            if is_lambda:
+                phase = "statements"
+                statements.append(self.parse_lambda())
+            else:
+                if phase == "statements":
+                    token_error(first, "function declaration must appear before statements")
+                phase = "functions"
+                functions.append(self.parse_function())
+            continue
+        if first.text == "exit":
+            phase = "statements"
+            exit_node = self.parse_exit()
+            self.line_finished()
+            continue
+        phase = "statements"
+        statements.append(self.parse_statement())
+        self.line_finished()
+    if exit_node is None:
+        raise CompileError(f"line {last_line}:{last_col}: program has no exit statement")
+    return ProgramNode(structs, functions, statements, exit_node)
+
+
+Parser.parse_program = _p8_program
+
+# Existing lexer is byte based. Recognize brackets in the same lexical
+# pass without changing the original token locations or other tokens.
+_p8_original_lex = lex
+
+
+def lex(data):
+    # Brackets are new standalone tokens. This scanner leaves the original
+    # lexer responsible for every other token and all its error messages.
+    output = []
+    offset = 0
+    for line in data.split(b"\n"):
+        segments = []
+        start = 0
+        for i, byte in enumerate(line):
+            if byte in (ord("["), ord("]")):
+                if start < i:
+                    segments.append((start, line[start:i]))
+                segments.append((i, bytes([byte])))
+                start = i + 1
+        if start < len(line):
+            segments.append((start, line[start:]))
+        if not segments:
+            output.append([])
+        else:
+            tokens = []
+            for column, segment in segments:
+                if segment in (b"[", b"]"):
+                    tokens.append(Token("lbracket" if segment == b"[" else "rbracket", segment.decode(), len(output) + 1, column + 1))
+                else:
+                    part = _p8_original_lex(segment)
+                    if part:
+                        for tok in part[0]:
+                            tok.line = len(output) + 1
+                            tok.column += column
+                            tokens.append(tok)
+            output.append(tokens)
+        offset += len(line) + 1
+    if data.endswith(b"\n"):
+        output.pop()
+    return output
+
+
+# Preserve original AST for --ast; attach checked rewrites only afterwards.
+_p8_prev_call_sem = SemanticChecker.visit_call
+_p8_prev_member_sem = SemanticChecker.visit_membercall
+
+
+def _p8_find_variable(self, name):
+    for scope in reversed(self.scopes):
+        if name in scope:
+            return scope[name]
+    owner = getattr(self, "current_struct", None)
+    if owner is not None:
+        return owner.field_map.get(name)
+    return None
+
+
+def _p8_resolve_callable(self, original, receiver, object_name, fn):
+    if len(original.args) != len(fn.params):
+        raise CompileError(f"line {original.line}:{original.col}: '{object_name}' expects {len(fn.params)} argument(s), got {len(original.args)}")
+    token = Token("identifier", "call", original.line, original.col)
+    rewrite = MemberCallNode(token, receiver, "call", original.args)
+    try:
+        rewrite.accept(self)
+    except CompileError as error:
+        # Reword only argument diagnostic; preserve mutation and type details.
+        msg = str(error)
+        if "pass argument" in msg:
+            msg = msg.replace("pass argument", f"pass argument to '{object_name}'")
+        raise CompileError(msg) from None
+    original.callable_rewrite = rewrite
+    original.type = rewrite.type
+    return original.type
+
+
+def _p8_call_sem(self, node):
+    if node.name in ("read", "print"):
+        return _p8_prev_call_sem(self, node)
+    decl = _p8_find_variable(self, node.name)
+    owner = getattr(self, "current_struct", None)
+    function_exists = node.name in self.functions or (owner is not None and node.name in owner.method_map)
+    if decl is None:
+        return _p8_prev_call_sem(self, node)
+    if function_exists:
+        raise CompileError(f"line {node.line}:{node.col}: '{node.name}' is both a variable and a function: rename one of them")
+    if decl.type_name not in self.structs:
+        raise CompileError(f"line {node.line}:{node.col}: '{node.name}' is not callable: it is {decl.type_name}")
+    struct = self.structs[decl.type_name]
+    if "call" not in struct.method_map:
+        raise CompileError(f"line {node.line}:{node.col}: '{node.name}' is not callable: {struct.name} has no member function 'call'")
+    return _p8_resolve_callable(self, node, VarNode(node.line, node.col, node.name), node.name, struct.method_map["call"])
+
+
+def _p8_member_sem(self, node):
+    typ = node.receiver.accept(self)
+    if typ not in self.structs:
+        return _p8_prev_member_sem(self, node)
+    struct = self.structs[typ]
+    if node.name not in struct.field_map:
+        return _p8_prev_member_sem(self, node)
+    field = struct.field_map[node.name]
+    if field.type_name not in self.structs:
+        raise CompileError(f"line {node.line}:{node.col}: field '{node.name}' is not callable: it is {field.type_name}")
+    target = self.structs[field.type_name]
+    if "call" not in target.method_map:
+        raise CompileError(f"line {node.line}:{node.col}: field '{node.name}' is not callable: {target.name} has no member function 'call'")
+    receiver = ResultFieldNode(Token("identifier", node.name, node.line, node.col), node.receiver, node.name)
+    return _p8_resolve_callable(self, node, receiver, node.name, target.method_map["call"])
+
+
+SemanticChecker.visit_call = _p8_call_sem
+SemanticChecker.visit_membercall = _p8_member_sem
+
+_p8_prev_codegen_call = CodeGen.visit_call
+_p8_prev_codegen_member = CodeGen.visit_membercall
+
+
+def _p8_codegen_call(self, node):
+    rewrite = getattr(node, "callable_rewrite", None)
+    return rewrite.accept(self) if rewrite is not None else _p8_prev_codegen_call(self, node)
+
+
+def _p8_codegen_member(self, node):
+    rewrite = getattr(node, "callable_rewrite", None)
+    return rewrite.accept(self) if rewrite is not None else _p8_prev_codegen_member(self, node)
+
+
+CodeGen.visit_call = _p8_codegen_call
+CodeGen.visit_membercall = _p8_codegen_member
+
+# Distinguish lambda captures from ordinary struct fields for mutation rules.
+_p8_original_path = _p7_path
+
+
+def _p8_path(checker, expr):
+    if isinstance(expr, VarNode) and isinstance(getattr(expr, "decl", None), FieldDeclNode) and getattr(expr.decl, "is_capture", False):
+        return [expr.decl.mutable], False
+    if isinstance(expr, FieldAccessNode) and isinstance(getattr(expr, "decl", None), FieldDeclNode) and getattr(expr.decl, "is_capture", False):
+        return [expr.decl.mutable] + [f.mutable for f in expr.resolved_fields], False
+    return _p8_original_path(checker, expr)
+
+
+_p7_path = _p8_path
+
+_p8_original_lookup = SemanticChecker.lookup
+
+
+def _p8_lookup(self, node, name):
+    try:
+        return _p8_original_lookup(self, node, name)
+    except CompileError:
+        outer = getattr(self, "lambda_outer_names", None)
+        if outer is not None and name in outer:
+            raise CompileError(f"line {node.line}:{node.col}: '{name}' is not captured by lambda '{self.lambda_name}': add it to the capture list, [{name}]") from None
+        raise
+
+
+SemanticChecker.lookup = _p8_lookup
+
+_p8_original_assignable = SemanticChecker.check_assignable
+
+
+def _p8_assignable(self, expr, want, at, what):
+    if expr.type in getattr(self, "lambda_types", set()) and expr.type != want:
+        raise CompileError(f"line {at.line}:{at.col}: '{getattr(expr, 'name', 'value')}' is a lambda and cannot be used here: its type has no name")
+    return _p8_original_assignable(self, expr, want, at, what)
+
+
+SemanticChecker.check_assignable = _p8_assignable
+
+_p8_original_print = SemanticChecker.visit_print
+_p8_original_exit = SemanticChecker.visit_exit
+_p8_original_fieldaccess = SemanticChecker.visit_fieldaccess
+_p8_original_resultfield = SemanticChecker.visit_resultfield
+
+
+def _p8_print(self, node):
+    if isinstance(node.value, VarNode):
+        typ = node.value.accept(self)
+        if typ in getattr(self, "lambda_types", set()):
+            raise CompileError(f"line {node.line}:{node.col}: lambda '{node.value.name}' cannot be printed")
+    return _p8_original_print(self, node)
+
+
+def _p8_exit(self, node):
+    if isinstance(node.value, VarNode):
+        typ = node.value.accept(self)
+        if typ in getattr(self, "lambda_types", set()):
+            raise CompileError(f"line {node.line}:{node.col}: lambda '{node.value.name}' cannot be returned by exit")
+    return _p8_original_exit(self, node)
+
+
+def _p8_fieldaccess(self, node):
+    typ = _p8_original_fieldaccess(self, node)
+    if node.decl.type_name in getattr(self, "lambda_types", set()):
+        raise CompileError(f"line {node.line}:{node.col}: captures of lambda '{node.name}' are not accessible outside its body")
+    return typ
+
+
+def _p8_resultfield(self, node):
+    typ = _p8_original_resultfield(self, node)
+    if node.receiver.type in getattr(self, "lambda_types", set()):
+        raise CompileError(f"line {node.line}:{node.col}: lambda captures are private")
+    return typ
+
+
+SemanticChecker.visit_print = _p8_print
+SemanticChecker.visit_exit = _p8_exit
+SemanticChecker.visit_fieldaccess = _p8_fieldaccess
+SemanticChecker.visit_resultfield = _p8_resultfield
+
+_p8_original_program_sem = SemanticChecker.visit_program
+
+
+def _p8_program_sem(self, node):
+    self.program = node
+    self.lambda_types = set()
+    self.lambda_serial = 0
+    # Extend visit_program's original fixed-point step for generated methods.
+    _p8_original_program_sem(self, node)
+    changed = True
+    while changed:
+        changed = False
+        for struct in node.structs:
+            for fn in struct.member_functions:
+                flag = fn.direct_mutating or any(dep.mutating for dep in fn.dependencies)
+                if flag and not fn.mutating:
+                    fn.mutating = True
+                    changed = True
+    for call, fn, links, temporary in self.pending_member_calls:
+        if fn.mutating and not temporary and not all(links):
+            raise CompileError(f"line {call.line}:{call.col}: cannot call '{getattr(call, 'name', 'call')}': its 'call' changes it, and it is not mut")
+
+
+SemanticChecker.visit_program = _p8_program_sem
+
+
+def _p8_lambda_sem(self, node):
+    scope = self.scopes[-1]
+    if node.name in scope:
+        raise CompileError(f"line {node.line}:{node.col}: variable '{node.name}' is already declared in this block")
+    seen = set()
+    fields, initializers = [], []
+    for token, mutable in node.captures:
+        if token.text in seen:
+            token_error(token, f"'{token.text}' is captured twice")
+        seen.add(token.text)
+        original = _p8_find_variable(self, token.text)
+        if original is None:
+            token_error(token, f"cannot capture '{token.text}': no variable '{token.text}' is visible here")
+        field = FieldDeclNode(token.line, token.column, token.text, original.type_name, mutable)
+        field.is_capture = True
+        fields.append(field)
+        init = VarNode(token.line, token.column, token.text)
+        init.accept(self)
+        initializers.append(init)
+    seen_params = set()
+    for param in node.params:
+        if param.name in seen or param.name in seen_params:
+            raise CompileError(f"line {param.line}:{param.col}: parameter '{param.name}' conflicts with a capture or parameter")
+        seen_params.add(param.name)
+        if not self.is_known_type(param.type_name) or param.type_name in self.lambda_types:
+            raise CompileError(f"line {param.line}:{param.col}: unknown or anonymous parameter type '{param.type_name}'")
+    if not self.is_known_type(node.result_type) or node.result_type in self.lambda_types:
+        raise CompileError(f"line {node.line}:{node.col}: invalid lambda result type '{node.result_type}'")
+    self.lambda_serial += 1
+    # Reference requires lambda.add_k; nested/repeated names need a unique suffix.
+    hidden_name = "lambda." + node.name
+    if hidden_name in self.structs:
+        hidden_name += "." + str(self.lambda_serial)
+    struct = StructDeclNode(node.line, node.col, hidden_name, fields)
+    method = MemberFnNode(node.line, node.col, "call", node.params, node.result_type, node.body)
+    struct.member_functions = [method]
+    struct.method_map = {"call": method}
+    struct.field_map = {}
+    for i, field in enumerate(fields):
+        field.index = i
+        struct.field_map[field.name] = field
+    method.owner = struct
+    method.direct_mutating = False
+    method.mutating = False
+    method.dependencies = set()
+    self.structs[hidden_name] = struct
+    self.lambda_types.add(hidden_name)
+    self.program.structs.append(struct)
+    declaration = DeclNode(node.line, node.col, node.name, hidden_name, any(f.mutable for f in fields), initializers)
+    node.hidden_struct = struct
+    node.declaration = declaration
+    # Lambda bodies are isolated just like global functions; captured fields
+    # are accessed through the hidden struct's implicit 'this'.
+    saved_scope = self.scopes
+    saved_function = self.current_function
+    saved_struct = getattr(self, "current_struct", None)
+    saved_outer = getattr(self, "lambda_outer_names", None)
+    saved_lambda_name = getattr(self, "lambda_name", None)
+    self.scopes = [{}]
+    self.current_function = method
+    self.current_struct = struct
+    self.lambda_name = node.name
+    self.lambda_outer_names = set().union(*[set(f) for f in saved_scope])
+    if saved_struct:
+        self.lambda_outer_names.update(saved_struct.field_map)
+    try:
+        for p in node.params:
+            self.scopes[0][p.name] = p
+        node.body.accept(self)
+    finally:
+        self.scopes = saved_scope
+        self.current_function = saved_function
+        self.current_struct = saved_struct
+        self.lambda_outer_names = saved_outer
+        self.lambda_name = saved_lambda_name
+    # Declaration is made visible after its body, preventing self-recursion.
+    scope[node.name] = declaration
+
+
+SemanticChecker.visit_lambda = _p8_lambda_sem
+
+
+def _p8_lambda_codegen(self, node):
+    decl = node.declaration
+    ptr = self.create_alloca(decl.type_name, decl.name)
+    decl.ptr = ptr
+    for index, (field, expr) in enumerate(zip(node.hidden_struct.fields, decl.initializers)):
+        value = expr.accept(self)
+        value = self.coerce(value, expr.type, field.type_name)
+        field_ptr = self.builder.gep(ptr, [ir.Constant(I32, 0), ir.Constant(I32, index)], inbounds=True)
+        self.builder.store(value, field_ptr)
+
+
+CodeGen.visit_lambda = _p8_lambda_codegen
+
+
+_p8_old_main = main
+
+def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--ast-checked":
+        try:
+            with open(sys.argv[2], "rb") as src:
+                program = parse_source(src.read())
+            check_program(program)
+            for line in program.dump():
+                print(line)
+        except (CompileError, OSError) as error:
+            print(f"compilation error: {error}", file=sys.stderr)
+            sys.exit(1)
+        return
+    return _p8_old_main()
+
 if __name__ == "__main__":
     main()

@@ -1,0 +1,25 @@
+Program
+  Function recursive -> i32
+    Param n i32
+    Block
+      Decl result i32 const
+        Call recursive
+          Var n
+      Exit
+        Var result
+  Function looping -> i32
+    Block
+      While
+        Bool false
+        Block
+          Print
+            Const 1
+      Exit
+        Const 10
+  Decl a i32 const
+    Call recursive
+      Const 1
+  Decl b i32 const
+    Call looping
+  Exit
+    Const 0

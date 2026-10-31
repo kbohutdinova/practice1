@@ -1,0 +1,17 @@
+Program
+  Function calculate -> i32
+    Param a i32
+    Block
+      Decl x i32 const
+        BinOp +
+          Var a
+          Const 5
+      Decl result i32 const
+        BinOp *
+          Var x
+          Const 2
+      Exit
+        Var result
+  Exit
+    Call calculate
+      Const 3

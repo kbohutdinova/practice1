@@ -1,0 +1,10 @@
+i32 x{7}
+
+fn show := [x]() -> i32
+{
+    print(x)
+    exit x
+}
+
+i32 result{show()}
+exit 0

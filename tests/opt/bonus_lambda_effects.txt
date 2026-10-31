@@ -1,0 +1,14 @@
+fn quiet := []() -> i32
+{
+    exit 10
+}
+
+fn loud := []() -> i32
+{
+    print(42)
+    exit 20
+}
+
+i32 a{quiet()}
+i32 b{loud()}
+exit 0

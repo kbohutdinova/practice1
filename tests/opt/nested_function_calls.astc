@@ -1,0 +1,30 @@
+Program
+  Function double -> i32
+    Param x i32
+    Block
+      Decl result i32 const
+        BinOp *
+          Var x
+          Const 2
+      Exit
+        Var result
+  Function add -> i32
+    Param a i32
+    Param b i32
+    Block
+      Decl result i32 const
+        BinOp +
+          Var a
+          Var b
+      Exit
+        Var result
+  Decl result i32 const
+    Call add
+      Call double
+        Const 3
+      Call double
+        Const 4
+  Print
+    Var result
+  Exit
+    Const 0

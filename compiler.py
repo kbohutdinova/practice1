@@ -3931,21 +3931,351 @@ def _p8_lambda_codegen(self, node):
 CodeGen.visit_lambda = _p8_lambda_codegen
 
 
+
 _p8_old_main = main
 
+
+
+
+def optimization_children(node):
+    if isinstance(node, CallNode) and getattr(node, "callable_rewrite", None) is not None:
+        return [node.callable_rewrite]
+
+    if isinstance(node, LambdaNode):
+        return [node.declaration, node.hidden_struct]
+
+    fields = (
+        "structs", "functions", "statements", "exit_node",
+        "body", "then_block", "else_block", "condition",
+        "initializers", "value", "operand", "left", "right",
+        "args", "receiver", "member_functions"
+    )
+
+    children = []
+
+    for field in fields:
+        value = getattr(node, field, None)
+
+        if isinstance(value, Node):
+            children.append(value)
+        elif isinstance(value, (list, tuple)):
+            children.extend(item for item in value if isinstance(item, Node))
+
+    return children
+
+
+def optimization_walk(root):
+    visited = set()
+    stack = [root]
+
+    while stack:
+        node = stack.pop()
+
+        if not isinstance(node, Node) or id(node) in visited:
+            continue
+
+        visited.add(id(node))
+        yield node
+        stack.extend(reversed(optimization_children(node)))
+
+
+class EffectAnalyzer:
+    def __init__(self, program):
+        self.functions = [
+            *program.functions,
+            *(method for struct in program.structs for method in struct.member_functions)
+        ]
+
+        self.ids = {id(fn) for fn in self.functions}
+        self.dependencies = {}
+        self.effects = set()
+
+        for fn in self.functions:
+            fn_id = id(fn)
+            dependencies = set()
+            direct_effect = bool(getattr(fn, "mutating", False))
+
+            for node in optimization_walk(fn.body):
+                if isinstance(node, (PrintNode, WhileNode)):
+                    direct_effect = True
+
+                if isinstance(node, (CallNode, MemberCallNode)):
+                    if isinstance(node, CallNode) and getattr(node, "callable_rewrite", None) is not None:
+                        continue
+
+                    target = getattr(node, "function", None)
+
+                    if target == "read":
+                        direct_effect = True
+                    elif isinstance(target, (FunctionDeclNode, MemberFnNode)):
+                        dependencies.add(id(target))
+
+                        if getattr(target, "mutating", False):
+                            direct_effect = True
+                    elif target is None:
+                        direct_effect = True
+
+            self.dependencies[fn_id] = dependencies
+
+            if direct_effect:
+                self.effects.add(fn_id)
+
+        for fn_id in self.ids:
+            if self.is_recursive(fn_id):
+                self.effects.add(fn_id)
+
+        changed = True
+
+        while changed:
+            previous = len(self.effects)
+
+            for fn_id, deps in self.dependencies.items():
+                if deps & self.effects or any(dep not in self.ids for dep in deps):
+                    self.effects.add(fn_id)
+
+            changed = len(self.effects) != previous
+
+    def is_recursive(self, start):
+        visited = set()
+        stack = list(self.dependencies.get(start, ()))
+
+        while stack:
+            current = stack.pop()
+
+            if current == start:
+                return True
+
+            if current in visited:
+                continue
+
+            visited.add(current)
+            stack.extend(self.dependencies.get(current, ()))
+
+        return False
+
+    def expression_has_effect(self, expression):
+        for node in optimization_walk(expression):
+            if isinstance(node, (CallNode, MemberCallNode)):
+                if isinstance(node, CallNode) and getattr(node, "callable_rewrite", None) is not None:
+                    continue
+
+                target = getattr(node, "function", None)
+
+                if target == "read":
+                    return True
+
+                if not isinstance(target, (FunctionDeclNode, MemberFnNode)):
+                    return True
+
+                if id(target) in self.effects or id(target) not in self.ids:
+                    return True
+
+        return False
+
+
+class UseCounter:
+    def __init__(self):
+        self.reads = {}
+        self.declarations = {}
+
+    def count(self, program):
+        lambda_declarations = {
+            id(node.declaration)
+            for node in optimization_walk(program)
+            if isinstance(node, LambdaNode) and node.declaration is not None
+        }
+
+        for node in optimization_walk(program):
+            if isinstance(node, DeclNode) and id(node) not in lambda_declarations:
+                self.declarations[id(node)] = node
+                self.reads.setdefault(id(node), 0)
+
+        for node in optimization_walk(program):
+            if isinstance(node, (VarNode, FieldAccessNode)):
+                decl = getattr(node, "decl", None)
+
+                if id(decl) in self.reads:
+                    self.reads[id(decl)] += 1
+
+        return self.reads
+
+
+class Pruner:
+    def __init__(self, dead):
+        self.dead = dead
+
+    def prune(self, program):
+        self.prune_block(program)
+
+        for fn in program.functions:
+            self.prune_block(fn.body)
+
+        for struct in program.structs:
+            for method in struct.member_functions:
+                self.prune_block(method.body)
+
+        return program
+
+    def prune_block(self, block):
+        statements = []
+
+        for stmt in block.statements:
+            if isinstance(stmt, DeclNode) and id(stmt) in self.dead:
+                continue
+
+            if isinstance(stmt, AssignNode) and id(stmt.decl) in self.dead:
+                continue
+
+            if isinstance(stmt, IfNode):
+                self.prune_block(stmt.then_block)
+
+                if stmt.else_block is not None:
+                    self.prune_block(stmt.else_block)
+
+            if isinstance(stmt, WhileNode):
+                self.prune_block(stmt.body)
+
+            statements.append(stmt)
+
+        block.statements = statements
+
+
+class FunctionUseCounter:
+    def __init__(self, program):
+        self.functions = {id(fn): fn for fn in program.functions}
+        self.calls = {id(fn): 0 for fn in program.functions}
+
+    def count(self, program):
+        for node in optimization_walk(program):
+            if isinstance(node, CallNode) and getattr(node, "callable_rewrite", None) is None:
+                fn_id = id(getattr(node, "function", None))
+
+                if fn_id in self.calls:
+                    self.calls[fn_id] += 1
+
+        return self.calls
+
+
+def remove_unused_functions(program):
+    removed = False
+
+    while True:
+        counts = FunctionUseCounter(program).count(program)
+        dead = {fn_id for fn_id, count in counts.items() if count == 0}
+
+        if not dead:
+            return removed
+
+        program.functions = [
+            fn for fn in program.functions
+            if id(fn) not in dead
+        ]
+
+        removed = True
+
+
+def remove_unused_variables(program):
+    while True:
+        effects = EffectAnalyzer(program)
+        counter = UseCounter()
+        counter.count(program)
+        protected = set()
+
+        for node in optimization_walk(program):
+            if isinstance(node, AssignNode) and effects.expression_has_effect(node.value):
+                protected.add(id(node.decl))
+
+        dead = set()
+
+        for decl_id, decl in counter.declarations.items():
+            if counter.reads[decl_id] != 0 or decl_id in protected:
+                continue
+
+            if any(effects.expression_has_effect(expr) for expr in decl.initializers):
+                continue
+
+            dead.add(decl_id)
+
+        if not dead:
+            return program
+
+        Pruner(dead).prune(program)
+
+
+def remove_unused(program):
+    while True:
+        remove_unused_variables(program)
+        changed = remove_unused_functions(program)
+
+        if not changed:
+            return program
+
+
 def main():
-    if len(sys.argv) == 3 and sys.argv[1] == "--ast-checked":
+    arguments = sys.argv[1:]
+    optimize = "--remove-unused" in arguments
+
+    if optimize:
+        arguments = [
+            arg for arg in arguments
+            if arg != "--remove-unused"
+        ]
+
+        show_ast = "--ast-checked" in arguments
+        paths = [
+            arg for arg in arguments
+            if arg != "--ast-checked"
+        ]
+
+        expected = 1 if show_ast else 2
+
+        if len(paths) != expected:
+            print("invalid arguments", file=sys.stderr)
+            sys.exit(1)
+
         try:
-            with open(sys.argv[2], "rb") as src:
+            with open(paths[0], "rb") as src:
                 program = parse_source(src.read())
+
             check_program(program)
+            program = remove_unused(program)
+
+            if show_ast:
+                for line in program.dump():
+                    print(line)
+            else:
+                compile_program(program, paths[1])
+
+        except (CompileError, OSError) as error:
+            print(
+                f"compilation error: {error}",
+                file=sys.stderr
+            )
+            sys.exit(1)
+
+        return
+
+    if len(arguments) == 2 and arguments[0] == "--ast-checked":
+        try:
+            with open(arguments[1], "rb") as src:
+                program = parse_source(src.read())
+
+            check_program(program)
+
             for line in program.dump():
                 print(line)
+
         except (CompileError, OSError) as error:
-            print(f"compilation error: {error}", file=sys.stderr)
+            print(
+                f"compilation error: {error}",
+                file=sys.stderr
+            )
             sys.exit(1)
+
         return
+
     return _p8_old_main()
+
 
 if __name__ == "__main__":
     main()

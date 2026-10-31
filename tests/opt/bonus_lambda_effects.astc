@@ -1,0 +1,33 @@
+Program
+  Struct lambda.quiet
+    MemberFn call -> i32
+      Block
+        Exit
+          Const 10
+  Struct lambda.loud
+    MemberFn call -> i32
+      Block
+        Print
+          Const 42
+        Exit
+          Const 20
+  Lambda quiet -> i32
+    Struct lambda.quiet
+      MemberFn call -> i32
+        Block
+          Exit
+            Const 10
+    Decl quiet lambda.quiet const
+  Lambda loud -> i32
+    Struct lambda.loud
+      MemberFn call -> i32
+        Block
+          Print
+            Const 42
+          Exit
+            Const 20
+    Decl loud lambda.loud const
+  Decl b i32 const
+    Call loud
+  Exit
+    Const 0

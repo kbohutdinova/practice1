@@ -1,0 +1,9 @@
+fn loud := () -> i32
+{
+    print(99)
+    exit 5
+}
+
+i32 mut x{0}
+x := loud()
+exit 0

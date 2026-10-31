@@ -1,0 +1,8 @@
+fn show := () -> i32
+{
+    print(42)
+    exit 10
+}
+
+i32 x{show()}
+exit 0

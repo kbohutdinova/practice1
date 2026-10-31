@@ -1,0 +1,21 @@
+Program
+  Struct lambda.counter
+    MemberFn call -> i32
+      Block
+        Decl x i32 const
+          Const 7
+        Exit
+          Var x
+  Lambda counter -> i32
+    Struct lambda.counter
+      MemberFn call -> i32
+        Block
+          Decl x i32 const
+            Const 7
+          Exit
+            Var x
+    Decl counter lambda.counter const
+  Print
+    Call counter
+  Exit
+    Const 0

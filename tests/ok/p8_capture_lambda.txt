@@ -1,0 +1,12 @@
+i32 k{2}
+fn double := [k](i32 x) -> i32
+{
+ i32 r{k * x}
+ exit r
+}
+fn add := [double](i32 x) -> i32
+{
+ i32 r{double(x) + 1}
+ exit r
+}
+exit add(4)

@@ -1,0 +1,14 @@
+fn calculate := (i32 x) -> i32
+{
+    i32 result{x + 10}
+    exit result
+}
+
+fn caller := [] () -> i32
+{
+    i32 result{calculate(5)}
+    exit result
+}
+
+print(caller())
+exit 0

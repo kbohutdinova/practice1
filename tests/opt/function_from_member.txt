@@ -1,0 +1,20 @@
+struct Counter
+{
+    i32 n
+
+    fn get := () -> i32
+    {
+        i32 result{calculate(n)}
+        exit result
+    }
+}
+
+fn calculate := (i32 x) -> i32
+{
+    i32 result{x + 10}
+    exit result
+}
+
+Counter c{5}
+print(c.get())
+exit 0

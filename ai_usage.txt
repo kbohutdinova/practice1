@@ -33,3 +33,92 @@ What I used as-is:
 - AI-assisted code changes and test examples.
 
 Сhat link: https://chatgpt.com/share/6ad64dc3-8b84-83ed-93ce-3c2acd585bca
+
+Practice 8 — AI Usage
+
+Tool: OpenAI ChatGPT
+
+Purpose:
+- Analysis of the Practice 8 requirements.
+- Review of the existing Practice 7 compiler architecture.
+- Assistance with implementing callable objects and callable fields.
+- Generation of lambda and capture handling code.
+- Assistance with mutable captures (additional task).
+- Generation of positive and negative tests.
+- Debugging and checking LLVM IR output.
+- Preparation of documentation.
+
+Code usage:
+AI-generated implementation code was integrated into the existing compiler.py.
+The implementation was tested in the Ubuntu VM using llvmlite and lli.
+The suggested tests were added to the project and executed.
+
+Verification:
+- Practice 7: 22/22 tests passed.
+- Practice 8: 23/23 tests passed.
+- Mutable capture reference example produced the expected output.
+- Missing-capture and lambda-as-argument errors were verified.
+- --ast-checked and generated LLVM IR were inspected.
+
+Chat link: https://chatgpt.com/share/6adfa76a-8f70-83ed-8816-cc3232312c0a
+
+Practice 9 — AI Usage
+
+Tool: OpenAI ChatGPT
+
+Purpose:
+- Understanding the Practice 9 requirements.
+- Reviewing the existing Practice 8 compiler architecture.
+- Assistance with implementing the --remove-unused flag.
+- Implementing unused variable detection with UseCounter.
+- Implementing AST node removal with Pruner.
+- Adding repeated optimization passes.
+- Implementing unused global function detection and removal.
+- Creating optimization tests for variables, functions, scopes, loops, member functions and lambdas.
+- Debugging compilation errors and checking generated LLVM IR.
+- Preparing the test runner and README documentation.
+
+Code usage:
+AI-generated code for UseCounter, Pruner, FunctionUseCounter and the optimization loop was integrated into the existing compiler.py.
+AI-generated test examples and the run_tests_practice9.py script were used in the project.
+The implementation was tested in the Ubuntu VM using Python, llvmlite and lli.
+Some test examples were corrected to match the syntax supported by the compiler.
+
+Verification:
+- Practice 8: 23/23 tests passed.
+- Previous valid programs: 36/36 passed with and without optimization.
+- Previous invalid programs: 36/36 produced the same errors with and without optimization.
+- Optimization tests: 12 tests were created with AST and expected-output files, pending final verification.
+- Unused global functions were removed from the generated LLVM IR.
+- Variable shadowing, nested functions, lambdas, member calls and read() behavior were checked.
+- AST memory release was checked using weakref.ref().
+
+What I changed:
+- Adjusted test programs to follow the compiler grammar.
+- Fixed integration and syntax errors.
+- Checked optimized AST output and program execution results.
+- Verified the generated LLVM IR and regression tests.
+
+Practice 9 Bonus — AI Usage
+
+Tool: OpenAI ChatGPT
+
+Purpose:
+- Understanding the bonus effect-analysis requirements.
+- Implementing EffectAnalyzer for pure and effectful functions.
+- Tracking effects through function calls.
+- Handling print(), read(), while loops and recursion.
+- Analyzing mutating member functions and callable objects.
+- Fixing an infinite optimization loop involving lambda declarations.
+- Creating and debugging bonus tests.
+
+Code usage:
+AI-assisted changes were integrated into the existing Practice 9 optimizer.
+The implementation was checked against the existing compiler and tested in the Ubuntu VM.
+
+Verification:
+- Practice 8: 23/23 tests passed.
+- Practice 9: 92/92 tests passed.
+- Pure function calls were removed when unused.
+- Observable effects and mutating calls were preserved.
+- Lambda captures and callable behavior were checked.

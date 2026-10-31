@@ -1,0 +1,11 @@
+Program
+  Function show -> i32
+    Block
+      Print
+        Const 42
+      Exit
+        Const 10
+  Decl x i32 const
+    Call show
+  Exit
+    Const 0

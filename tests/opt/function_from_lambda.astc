@@ -1,0 +1,32 @@
+Program
+  Struct lambda.caller
+    MemberFn call -> i32
+      Block
+        Decl result i32 const
+          Call calculate
+            Const 5
+        Exit
+          Var result
+  Function calculate -> i32
+    Param x i32
+    Block
+      Decl result i32 const
+        BinOp +
+          Var x
+          Const 10
+      Exit
+        Var result
+  Lambda caller -> i32
+    Struct lambda.caller
+      MemberFn call -> i32
+        Block
+          Decl result i32 const
+            Call calculate
+              Const 5
+          Exit
+            Var result
+    Decl caller lambda.caller const
+  Print
+    Call caller
+  Exit
+    Const 0

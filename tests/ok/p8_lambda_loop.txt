@@ -1,0 +1,13 @@
+i32 mut i{0}
+i32 mut result{0}
+while !(i == 3)
+{
+ fn add := [i](i32 x) -> i32
+ {
+  i32 r{x + i}
+  exit r
+ }
+ result := result + add(10)
+ i := i + 1
+}
+exit result

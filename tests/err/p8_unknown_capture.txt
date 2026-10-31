@@ -1,0 +1,5 @@
+fn add := [k](i32 y) -> i32
+{
+ exit y
+}
+exit 0

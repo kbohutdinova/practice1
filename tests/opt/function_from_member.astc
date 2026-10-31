@@ -1,0 +1,26 @@
+Program
+  Struct Counter
+    Field n i32 const
+    MemberFn get -> i32
+      Block
+        Decl result i32 const
+          Call calculate
+            Var n
+        Exit
+          Var result
+  Function calculate -> i32
+    Param x i32
+    Block
+      Decl result i32 const
+        BinOp +
+          Var x
+          Const 10
+      Exit
+        Var result
+  Decl c Counter const
+    Const 5
+  Print
+    MemberCall get
+      Var c
+  Exit
+    Const 0

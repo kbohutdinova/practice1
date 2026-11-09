@@ -1,0 +1,9 @@
+fn counter := [ ] () -> i32
+{
+    i32 unused{100}
+    i32 x{7}
+    exit x
+}
+
+print(counter())
+exit 0

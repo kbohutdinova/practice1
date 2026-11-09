@@ -1,0 +1,26 @@
+Program
+  Struct lambda.show
+    Field x i32 const
+    MemberFn call -> i32
+      Block
+        Print
+          Var x
+        Exit
+          Var x
+  Decl x i32 const
+    Const 7
+  Lambda show -> i32
+    Struct lambda.show
+      Field x i32 const
+      MemberFn call -> i32
+        Block
+          Print
+            Var x
+          Exit
+            Var x
+    Decl show lambda.show const
+      Var x
+  Decl result i32 const
+    Call show
+  Exit
+    Const 0

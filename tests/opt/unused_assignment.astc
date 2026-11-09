@@ -1,0 +1,5 @@
+Program
+  Decl y i32 const
+    Const 5
+  Exit
+    Var y

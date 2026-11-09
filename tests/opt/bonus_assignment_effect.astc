@@ -1,0 +1,13 @@
+Program
+  Function loud -> i32
+    Block
+      Print
+        Const 99
+      Exit
+        Const 5
+  Decl x i32 mut
+    Const 0
+  Assign x
+    Call loud
+  Exit
+    Const 0

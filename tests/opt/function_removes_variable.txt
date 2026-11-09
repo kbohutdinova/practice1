@@ -1,0 +1,13 @@
+fn helper := () -> i32
+{
+    i32 unused{10}
+    exit 5
+}
+
+fn dead := () -> i32
+{
+    i32 x{helper()}
+    exit x
+}
+
+exit 0

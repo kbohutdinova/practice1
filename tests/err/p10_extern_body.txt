@@ -1,0 +1,5 @@
+extern fn twice := (i32 a) -> i32
+{
+    exit 0
+}
+exit 0

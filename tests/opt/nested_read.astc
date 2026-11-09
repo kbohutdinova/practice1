@@ -1,0 +1,13 @@
+Program
+  Function get -> i32
+    Block
+      Decl x i32 const
+        Call read
+      Exit
+        Var x
+  Decl unused i32 const
+    BinOp +
+      Call get
+      Const 5
+  Exit
+    Const 0

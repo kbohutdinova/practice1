@@ -1,0 +1,14 @@
+fn getNumber := () -> i32
+{
+    i32 x{read()}
+    exit x
+}
+
+fn wrapper := () -> i32
+{
+    i32 result{getNumber()}
+    exit result
+}
+
+i32 unused{wrapper()}
+exit 0

@@ -1,0 +1,6 @@
+i32 k{5}
+fn add := [](i32 y) -> i32
+{
+ exit k
+}
+exit 0

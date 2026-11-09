@@ -1,0 +1,9 @@
+fn calculate := (i32 a) -> i32
+{
+    i32 unused{100}
+    i32 x{a + 5}
+    i32 result{x * 2}
+    exit result
+}
+
+exit calculate(3)

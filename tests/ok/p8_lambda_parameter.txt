@@ -1,0 +1,10 @@
+fn scaled := (i32 factor, i32 x) -> i32
+{
+ fn mult := [factor](i32 n) -> i32
+ {
+  i32 r{factor * n}
+  exit r
+ }
+ exit mult(x)
+}
+exit scaled(2, 9)

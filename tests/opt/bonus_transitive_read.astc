@@ -1,0 +1,17 @@
+Program
+  Function getNumber -> i32
+    Block
+      Decl x i32 const
+        Call read
+      Exit
+        Var x
+  Function wrapper -> i32
+    Block
+      Decl result i32 const
+        Call getNumber
+      Exit
+        Var result
+  Decl unused i32 const
+    Call wrapper
+  Exit
+    Const 0

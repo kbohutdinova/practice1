@@ -3993,7 +3993,7 @@ class EffectAnalyzer:
         for fn in self.functions:
             fn_id = id(fn)
             dependencies = set()
-            direct_effect = bool(getattr(fn, "mutating", False))
+            direct_effect = bool(getattr(fn, "mutating", False)) or isinstance(fn, ExternFunctionNode)
 
             for node in optimization_walk(fn.body):
                 if isinstance(node, (PrintNode, WhileNode)):
@@ -4275,6 +4275,180 @@ def main():
         return
 
     return _p8_old_main()
+
+
+
+
+# ============================================================
+# PRACTICE 10: C ABI declarations (extern fn)
+# ============================================================
+# Extern functions are normal global call targets, but have no language body.
+# Their llvm declarations use the exact C symbol name. Types permitted across
+# the boundary are deliberately limited to i32 and i64.
+
+class ExternFunctionNode(FunctionDeclNode):
+    def dump(self, indent=0):
+        lines = [" " * indent + f"Extern {self.name} -> {self.result_type}"]
+        for param in self.params:
+            lines.extend(param.dump(indent + 2))
+        return lines
+
+
+def _p10_parse_extern(self):
+    start = self.expect_text("extern")
+    self.expect_text("fn", "expected 'fn' after 'extern'")
+    name = self.expect_kind("identifier", "an extern function name")
+    self.expect_text(":=", "expected ':=' after extern name")
+    self.expect_text("(", "expected '(' after ':='")
+    params = []
+    if self.peek() is not None and self.peek().text != ")":
+        while True:
+            typ = self.eat()
+            if typ.text not in ("i32", "i64", "bool") and typ.kind != "identifier":
+                token_error(typ, "expected a parameter type")
+            param = self.expect_kind("identifier", "a parameter name")
+            params.append(ParamNode(param.line, param.column, param.text, typ.text))
+            if self.peek() is None or self.peek().text != ",":
+                break
+            self.eat()
+    self.expect_text(")", "expected ')' after parameters")
+    self.expect_text("->", "expected '->' after parameters")
+    result = self.eat()
+    if result.text not in ("i32", "i64", "bool") and result.kind != "identifier":
+        token_error(result, "expected an extern result type")
+    self.line_finished()
+    next_tokens = self.peek_nonempty_line()
+    if next_tokens and next_tokens[0].text == "{":
+        token_error(next_tokens[0], f"extern function '{name.text}' has no body: it is defined in C")
+    # An empty placeholder makes earlier optimization traversals safe. No
+    # actual block is parsed or emitted for this declaration.
+    return ExternFunctionNode(start.line, start.column, name.text, params,
+                              result.text, BlockNode(start.line, start.column, []))
+
+
+def _p10_parse_program(self):
+    structs, functions, statements = [], [], []
+    exit_node = None
+    phase = "structs"
+    last_line, last_col = 1, 1
+    while True:
+        tokens = self.next_line()
+        if tokens is None:
+            break
+        last_line, last_col = self.current_line, self.end_col
+        first = self.peek()
+        if first.text == "}":
+            token_error(first, "'}' without an open block")
+        if first.text == "else":
+            token_error(first, "'else' without an 'if'")
+        if exit_node is not None:
+            token_error(first, "code after exit")
+        if first.text == "struct":
+            if phase != "structs":
+                token_error(first, "struct declaration must appear before functions and statements")
+            structs.append(self.parse_struct())
+            continue
+        if first.text == "extern":
+            if phase == "statements":
+                token_error(first, "'extern' is not allowed here")
+            phase = "functions"
+            functions.append(_p10_parse_extern(self))
+            continue
+        if first.text == "fn":
+            if any(t.text == "[" for t in self.toks):
+                phase = "statements"
+                statements.append(self.parse_lambda())
+            else:
+                if phase == "statements":
+                    token_error(first, "function declaration must appear before statements")
+                phase = "functions"
+                functions.append(self.parse_function())
+            continue
+        if first.text == "exit":
+            phase = "statements"
+            exit_node = self.parse_exit()
+            self.line_finished()
+            continue
+        phase = "statements"
+        statements.append(self.parse_statement())
+        self.line_finished()
+    if exit_node is None:
+        raise CompileError(f"line {last_line}:{last_col}: program has no exit statement")
+    return ProgramNode(structs, functions, statements, exit_node)
+
+
+Parser.parse_program = _p10_parse_program
+_p10_previous_statement = Parser.parse_statement
+
+
+def _p10_parse_statement(self):
+    if self.peek() is not None and self.peek().text == "extern":
+        token_error(self.peek(), "'extern' is not allowed here")
+    return _p10_previous_statement(self)
+
+
+Parser.parse_statement = _p10_parse_statement
+_p10_previous_semantic_program = SemanticChecker.visit_program
+_p10_previous_semantic_function = SemanticChecker.visit_functiondecl
+
+
+def _p10_semantic_program(self, program):
+    occupied = {"main", "printf", "scanf"}
+    occupied.update(f"{s.name}_{fn.name}" for s in program.structs for fn in s.member_functions)
+    for function in program.functions:
+        if isinstance(function, ExternFunctionNode):
+            if function.name in occupied or function.name.startswith("user_fn_"):
+                raise CompileError(f"line {function.line}:{function.col}: '{function.name}' is a name the compiler already uses in the module")
+            for param in function.params:
+                if param.type_name not in ("i32", "i64"):
+                    raise CompileError(f"line {param.line}:{param.col}: parameter '{param.name}' of extern function '{function.name}' has type '{param.type_name}': only i32 and i64 cross into C")
+            if function.result_type not in ("i32", "i64"):
+                raise CompileError(f"line {function.line}:{function.col}: extern function '{function.name}' returns '{function.result_type}': only i32 and i64 cross into C")
+    return _p10_previous_semantic_program(self, program)
+
+
+def _p10_semantic_function(self, function):
+    if isinstance(function, ExternFunctionNode):
+        return None
+    return _p10_previous_semantic_function(self, function)
+
+
+SemanticChecker.visit_program = _p10_semantic_program
+SemanticChecker.visit_functiondecl = _p10_semantic_function
+SemanticChecker.visit_externfunction = _p10_semantic_function
+_p10_previous_codegen_program = CodeGen.visit_program
+_p10_previous_codegen_function = CodeGen.visit_functiondecl
+
+
+def _p10_codegen_program(self, program):
+    # Declare extern functions first and retain them when generating normal
+    # definitions; the existing visitor emits user functions and main.
+    externs = [fn for fn in program.functions if isinstance(fn, ExternFunctionNode)]
+    originals = program.functions
+    try:
+        program.functions = [fn for fn in originals if not isinstance(fn, ExternFunctionNode)]
+        for fn in externs:
+            fn.llvm_function = ir.Function(
+                self.module,
+                ir.FunctionType(llvm_type(fn.result_type, self.struct_types),
+                                [llvm_type(p.type_name, self.struct_types) for p in fn.params]),
+                name=fn.name)
+        _p10_previous_codegen_program(self, program)
+    finally:
+        program.functions = originals
+
+
+def _p10_codegen_call(self, node):
+    if isinstance(getattr(node, "function", None), ExternFunctionNode):
+        fn = node.function
+        args = _p7_call_values(self, node.args, fn.params)
+        return self.builder.call(fn.llvm_function, args)
+    return _p10_previous_codegen_call(self, node)
+
+
+_p10_previous_codegen_call = CodeGen.visit_call
+CodeGen.visit_program = _p10_codegen_program
+CodeGen.visit_call = _p10_codegen_call
 
 
 if __name__ == "__main__":

@@ -91,3 +91,59 @@ Examples:
 - Functions containing loops or recursion are preserved conservatively.
 
 The optimization runs only when --remove-unused is enabled.
+
+## Practice 10: native binary sessions and C FFI
+
+Practice 10 extends the Practice 9 compiler. The source files for the main task
+are in `tests/io`, and the additional C interop task is in `tests/ffi`.
+
+### Build the points program on Ubuntu
+
+```bash
+python3 compiler.py tests/io/points.txt points.ll
+llc -filetype=obj -relocation-model=pic points.ll -o points.o
+clang -fPIE points.o -o points
+./points < tests/io/points.sheet.in
+./points
+nm points.o
+```
+
+### Run the new automated tests
+
+```bash
+python3 run_tests_practice10.py --skip-previous
+python3 run_tests_practice10.py --remove-unused --skip-previous
+```
+
+To include the Practice 9 regression suite as required by the assignment,
+run both modes without `--skip-previous`:
+
+```bash
+python3 run_tests_practice10.py
+python3 run_tests_practice10.py --remove-unused
+```
+
+If `llc` is not installed, the new test script uses `clang -x ir -c` to
+compile LLVM IR into an object. The official three-step build above remains
+the required demonstration on Ubuntu.
+
+### Build the additional geometry program
+
+```bash
+python3 compiler.py tests/ffi/geometry.txt geometry.ll
+llc -filetype=obj -relocation-model=pic geometry.ll -o geometry.o
+clang -fPIE geometry.o tests/ffi/geometry.c -o geometry
+./geometry < tests/ffi/geometry.sheet.in
+nm geometry.o
+```
+
+The compiler recognizes `extern fn NAME := (i32/i64 parameters) -> i32/i64`.
+It emits an LLVM *declaration* using the unchanged C name, validates
+supported parameter/return types and rejects forbidden declarations.
+
+`tests/err/p10_extern_*.txt` contains tests for incorrect extern signatures,
+reserved symbols, duplicate names, a body, a misplaced declaration and more.
+
+**Reflection:** The file `reflection.md` is an outline only. Write all five
+responses yourself in 300–600 words. This is explicitly required by the brief.
+Check `ai_usage.txt` and ensure it accurately describes your own AI usage.

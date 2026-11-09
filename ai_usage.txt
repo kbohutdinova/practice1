@@ -122,3 +122,34 @@ Verification:
 - Pure function calls were removed when unused.
 - Observable effects and mutating calls were preserved.
 - Lambda captures and callable behavior were checked.
+
+Chat link: https://chatgpt.com/share/6ae64cad-1d1c-83ed-9e23-fd1bafd0c7c7
+
+Practice 10 — AI Usage (review and adjust before submission)
+
+Tool: OpenAI ChatGPT (GPT-6)
+
+Prompts and requested help:
+- "поясни шо треба зробити" — asked for an explanation of the Practice 10 PDF.
+- "напиши які файли тобі треба або допоможи створити zip файл тобі" — asked how to prepare the Practice 9 project archive.
+- "скинь мені повні файли з зроблемим додатковим також, та поясни що де і як ти зробив" — requested implementation of the main and additional tasks and a walkthrough of changes.
+
+What AI helped create:
+- compiler.py: support for extern fn parsing, AST, semantic checks and C-symbol IR declarations/calls.
+- tests/io/points.txt and three input/output sessions.
+- tests/ffi/geometry.txt and geometry.c, and two input/output sessions.
+- tests/ok/p10_libc_extern.txt and tests/err/p10_extern_*.txt/.expected.
+- run_tests_practice10.py: native binary compilation and session/error checks.
+- README Practice 10 documentation and the reflection question outline.
+
+What was used as-is:
+- The provided point and geometry program requirements and example from the official Practice 10 brief.
+- AI-assisted code and tests were integrated into the prior Practice 9 project.
+
+What was changed / verified:
+- The implementation was adapted to the existing compiler.py architecture from Practice 9.
+- Tests were adjusted to use clang for object generation when llc is unavailable.
+- In the preparation environment, 16/16 new tests passed in each mode, with and without --remove-unused.
+- Prior regression tests and the exact llc/lli commands must also be run in the Ubuntu course VM before submission.
+
+Chat link: https://chatgpt.com/share/6af20f06-ada4-83ed-a583-23abf23b4057

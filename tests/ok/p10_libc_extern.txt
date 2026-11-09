@@ -1,0 +1,7 @@
+extern fn abs := (i32 v) -> i32
+extern fn llabs := (i64 v) -> i64
+i32 a{abs(0 - 8)}
+i64 b{llabs(0 - 10)}
+print(a)
+print(b)
+exit a
